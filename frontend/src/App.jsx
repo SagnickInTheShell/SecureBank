@@ -1,26 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
-  ArrowUpRight,
-  ArrowDownLeft,
-  RefreshCw,
+  LayoutDashboard,
+  ArrowRightLeft,
+  PlusCircle,
+  History,
+  FileText,
+  Activity,
+  FileCode,
   LogOut,
   Send,
-  PlusCircle,
-  AlertTriangle,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Search,
+  Filter,
   CheckCircle2,
-  XCircle,
-  Lock,
-  KeyRound,
+  AlertTriangle,
+  Ban,
+  ChevronRight,
   User,
-  Activity,
-  History,
-  Sparkles,
-  Info
+  Settings,
+  BarChart3,
+  XCircle,
+  HelpCircle
 } from 'lucide-react';
 import './App.css';
 
-// Base API URL (proxied by Vite or direct)
 const API_BASE = '';
 
 function generateUUID() {
@@ -28,29 +34,36 @@ function generateUUID() {
 }
 
 function formatINR(amount) {
-  if (amount === undefined || amount === null) return '₹0';
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(amount);
+  if (amount === undefined || amount === null) return '₹ 0.00';
+  return (
+    '₹ ' +
+    amount.toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  );
 }
 
 export default function App() {
-  // Auth state
+  // Navigation / Active View
+  const [activeNav, setActiveNav] = useState('dashboard'); // 'dashboard', 'transactions', 'audit', 'risk'
+
+  // Auth State
   const [token, setToken] = useState(localStorage.getItem('securebank_token') || '');
   const [userAccount, setUserAccount] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [healthStatus, setHealthStatus] = useState('checking');
+  const [hideBalance, setHideBalance] = useState(false);
 
   // Transactions & Audit Logs
   const [transactions, setTransactions] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('transactions'); // 'transactions' | 'audit'
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Modals
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
+  const [selectedTxDetails, setSelectedTxDetails] = useState(null);
 
   // Transfer Form State
   const [recipientInput, setRecipientInput] = useState('SB10002');
@@ -66,33 +79,13 @@ export default function App() {
   const [depositSubmitting, setDepositSubmitting] = useState(false);
 
   // Auth Form State (Login / Register)
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  const [authMode, setAuthMode] = useState('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authName, setAuthName] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // 1. Check API Health
-  const checkHealth = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/health`);
-      if (res.ok) {
-        setHealthStatus('online');
-      } else {
-        setHealthStatus('degraded');
-      }
-    } catch {
-      setHealthStatus('offline');
-    }
-  };
-
-  useEffect(() => {
-    checkHealth();
-    const interval = setInterval(checkHealth, 15000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // 2. Fetch User Account & Balance
+  // 1. Fetch User Account
   const fetchAccount = async (currentToken = token) => {
     if (!currentToken) return;
     try {
@@ -115,7 +108,7 @@ export default function App() {
     }
   };
 
-  // 3. Fetch Transaction History
+  // 2. Fetch History
   const fetchHistory = async (currentToken = token) => {
     try {
       const res = await fetch(`${API_BASE}/transactions/history`, {
@@ -130,7 +123,7 @@ export default function App() {
     }
   };
 
-  // 4. Fetch Audit Logs
+  // 3. Fetch Audit Logs
   const fetchAuditLogs = async (currentToken = token) => {
     try {
       const res = await fetch(`${API_BASE}/accounts/me/audit-logs`, {
@@ -151,7 +144,7 @@ export default function App() {
     }
   }, [token]);
 
-  // Recipient Verification (Debounced)
+  // Recipient Verification
   useEffect(() => {
     if (!recipientInput || recipientInput.length < 5 || !token) {
       setRecipientInfo(null);
@@ -171,7 +164,7 @@ export default function App() {
       } catch {
         setRecipientInfo(null);
       }
-    }, 350);
+    }, 300);
 
     return () => clearTimeout(timer);
   }, [recipientInput, token]);
@@ -204,7 +197,7 @@ export default function App() {
         setAuthError(data.detail || 'Login failed. Please check credentials.');
       }
     } catch {
-      setAuthError('Unable to connect to SecureBank API server.');
+      setAuthError('Unable to connect to SecureBank server.');
     } finally {
       setLoading(false);
     }
@@ -245,25 +238,7 @@ export default function App() {
     setAuditLogs([]);
   };
 
-  // Seed / Reset to Interview Spec
-  const handleDemoSeed = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`${API_BASE}/accounts/demo-seed`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        fetchAccount();
-      }
-    } catch (err) {
-      console.error('Failed to seed demo data', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Transfer Money Handler
+  // Transfer Handler
   const handleTransfer = async (e, duplicateSimulation = false) => {
     if (e) e.preventDefault();
     setTransferError('');
@@ -296,11 +271,11 @@ export default function App() {
       if (res.ok) {
         if (duplicateSimulation) {
           setTransferSuccess(
-            `🛡️ Idempotency Verified! Duplicate request recognized (Tx #${data.id}). Safe replay: no double deduction occurred.`
+            `🛡️ Idempotency Verified! Duplicate request recognized (Tx #${data.id}). Replayed previous result without double deduction.`
           );
         } else if (data.status === 'FLAGGED') {
           setTransferSuccess(
-            `⚠️ Transfer of ${formatINR(data.amount)} completed with status FLAGGED (Risk Score: MEDIUM). Marked for compliance review.`
+            `⚠️ Transfer of ${formatINR(data.amount)} processed with status FLAGGED (Risk Score: MEDIUM). Marked for compliance review.`
           );
           setIdempotencyKey(generateUUID());
         } else {
@@ -319,7 +294,7 @@ export default function App() {
     }
   };
 
-  // Deposit Money Handler
+  // Deposit Handler
   const handleDeposit = async (e) => {
     e.preventDefault();
     const amt = parseInt(depositAmount, 10);
@@ -347,7 +322,7 @@ export default function App() {
     }
   };
 
-  // Preset quick fill for interview demonstrations
+  // Preset Scenario Click
   const prefillTest = (type) => {
     setShowTransferModal(true);
     setTransferError('');
@@ -365,32 +340,45 @@ export default function App() {
     }
   };
 
+  // Filtered transactions
+  const filteredTransactions = transactions.filter((tx) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      tx.type.toLowerCase().includes(query) ||
+      tx.receiver_account.toLowerCase().includes(query) ||
+      (tx.sender_account && tx.sender_account.toLowerCase().includes(query)) ||
+      tx.status.toLowerCase().includes(query) ||
+      tx.amount.toString().includes(query)
+    );
+  });
+
   // Calculate live risk preview for modal
   const getRiskPreview = () => {
     const amt = parseInt(transferAmount, 10) || 0;
     if (amt >= 250000) {
       return {
         level: 'HIGH',
-        text: 'Risk Prediction: HIGH (Will be BLOCKED by Risk Engine, HTTP 403, 0 funds debited)',
-        bg: 'var(--danger-bg)',
-        border: 'var(--danger-border)',
+        text: 'Risk Prediction: HIGH (Transfer will be BLOCKED by Risk Engine, HTTP 403, 0 funds debited)',
+        bg: 'var(--red-bg)',
+        border: 'var(--red-border)',
         color: '#f87171',
       };
     }
     if (amt >= 75000) {
       return {
         level: 'MEDIUM',
-        text: 'Risk Prediction: MEDIUM (High amount: Will execute with status FLAGGED)',
-        bg: 'var(--warning-bg)',
-        border: 'var(--warning-border)',
+        text: 'Risk Prediction: MEDIUM (Large transfer: Will execute with status FLAGGED for compliance)',
+        bg: 'var(--amber-bg)',
+        border: 'var(--amber-border)',
         color: '#fbbf24',
       };
     }
     return {
       level: 'LOW',
       text: 'Risk Prediction: LOW (Safe transfer: Instant execution & COMPLETED)',
-      bg: 'var(--success-bg)',
-      border: 'var(--success-border)',
+      bg: 'var(--green-bg)',
+      border: 'var(--green-border)',
       color: '#34d399',
     };
   };
@@ -399,46 +387,54 @@ export default function App() {
 
   // ================= RENDER =================
 
-  // If user is not logged in: show Auth Screen
+  // Auth Screen
   if (!token || !userAccount) {
     return (
       <div className="auth-container">
         <div className="auth-card">
           <div className="auth-header">
             <div className="brand-section" style={{ justifyContent: 'center', marginBottom: 12 }}>
-              <div className="brand-icon">
-                <ShieldCheck size={28} />
+              <div className="sb-logo-box">
+                <ShieldCheck size={26} />
               </div>
-              <h1 className="brand-title">SecureBank</h1>
+              <h1 className="sb-brand-name">SecureBank</h1>
             </div>
-            <p className="brand-subtitle">Intelligent Banking Transaction Platform</p>
+            <p className="sb-brand-desc">Intelligent Banking Transaction Platform</p>
           </div>
 
           <div className="auth-tabs">
             <button
               className={`auth-tab-btn ${authMode === 'login' ? 'active' : ''}`}
-              onClick={() => { setAuthMode('login'); setAuthError(''); }}
+              onClick={() => {
+                setAuthMode('login');
+                setAuthError('');
+              }}
             >
               Sign In
             </button>
             <button
               className={`auth-tab-btn ${authMode === 'register' ? 'active' : ''}`}
-              onClick={() => { setAuthMode('register'); setAuthError(''); }}
+              onClick={() => {
+                setAuthMode('register');
+                setAuthError('');
+              }}
             >
               Open Account
             </button>
           </div>
 
           {authError && (
-            <div style={{
-              background: 'var(--danger-bg)',
-              border: '1px solid var(--danger-border)',
-              color: '#f87171',
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '13px',
-              marginBottom: '16px'
-            }}>
+            <div
+              style={{
+                background: 'var(--red-bg)',
+                border: '1px solid var(--red-border)',
+                color: '#f87171',
+                padding: '10px 14px',
+                borderRadius: '10px',
+                fontSize: '13px',
+                marginBottom: '16px',
+              }}
+            >
               {authError}
             </div>
           )}
@@ -467,7 +463,12 @@ export default function App() {
                   onChange={(e) => setAuthPassword(e.target.value)}
                 />
               </div>
-              <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+              <button
+                type="submit"
+                className="btn-primary"
+                style={{ width: '100%', justifyContent: 'center' }}
+                disabled={loading}
+              >
                 {loading ? 'Authenticating...' : 'Sign In to Account'}
               </button>
             </form>
@@ -496,7 +497,7 @@ export default function App() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Password (min 6 chars)</label>
+                <label className="form-label">Password</label>
                 <input
                   type="password"
                   required
@@ -506,8 +507,13 @@ export default function App() {
                   onChange={(e) => setAuthPassword(e.target.value)}
                 />
               </div>
-              <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
-                {loading ? 'Creating...' : 'Register & Open Bank Account'}
+              <button
+                type="submit"
+                className="btn-primary"
+                style={{ width: '100%', justifyContent: 'center' }}
+                disabled={loading}
+              >
+                {loading ? 'Opening...' : 'Register & Open Bank Account'}
               </button>
             </form>
           )}
@@ -544,313 +550,511 @@ export default function App() {
     );
   }
 
-  // Logged-in Dashboard View
+  // Logged-in Dashboard
   return (
-    <div className="app-container">
-      {/* Header */}
-      <header className="app-header">
-        <div className="brand-section">
-          <div className="brand-icon">
-            <ShieldCheck size={26} />
+    <div className="sb-app">
+      {/* Top Navigation Bar */}
+      <header className="sb-topbar">
+        <div className="sb-brand">
+          <div className="sb-logo-box">
+            <ShieldCheck size={24} />
           </div>
           <div>
-            <h1 className="brand-title">SecureBank</h1>
-            <p className="brand-subtitle">Intelligent Banking Transaction Platform</p>
+            <div className="sb-brand-name">SecureBank</div>
+            <div className="sb-brand-desc">Intelligent Banking Transaction Platform</div>
           </div>
         </div>
 
-        <div className="header-actions">
-          <button
-            onClick={handleDemoSeed}
-            className="test-chip"
-            style={{
-              background: 'rgba(99, 102, 241, 0.25)',
-              color: '#c7d2fe',
-              border: '1px solid rgba(99, 102, 241, 0.5)',
-              padding: '6px 14px',
-              fontSize: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-            title="Reset Alice to the exact ₹42,500 interview specification"
-          >
-            <Sparkles size={14} color="#818cf8" />
-            <span>Reset Demo (₹42,500)</span>
-          </button>
-
-          <div className="health-badge" title="FastAPI REST API /health endpoint">
-            <span className="health-dot"></span>
+        <div className="sb-topbar-right">
+          <div className="sb-api-badge">
+            <span className="sb-green-dot"></span>
             <span>API Online</span>
           </div>
 
-          <div className="user-profile-badge">
-            <User size={16} color="#818cf8" />
-            <span className="account-pill">{userAccount.account_number}</span>
+          <div className="sb-user-chip" title="Account Holder">
+            <User size={15} color="#818cf8" />
+            <span>{userAccount.account_number}</span>
           </div>
 
-          <button onClick={handleLogout} className="btn-logout" title="Sign Out">
+          <button onClick={handleLogout} className="sb-logout-btn" title="Sign Out">
             <LogOut size={14} />
             <span>Logout</span>
           </button>
         </div>
       </header>
 
-      {/* Top Grid: Balance & Risk Engine */}
-      <div className="balance-grid">
-        {/* Balance Card */}
-        <div className="balance-card">
-          <div className="balance-header">
-            <span className="balance-label">Total Balance</span>
-            <span className="account-status-tag">
-              <span className="pulse-dot" style={{ background: '#34d399' }}></span>
-              {userAccount.status}
-            </span>
-          </div>
-
-          <div className="balance-amount">
-            <span className="currency-symbol">₹</span>
-            <span>{userAccount.balance.toLocaleString('en-IN')}</span>
-          </div>
-
-          <div className="balance-actions">
-            <button
-              onClick={() => {
-                setShowTransferModal(true);
-                setTransferError('');
-                setTransferSuccess('');
-                setRecipientInput('SB10002');
-                setIdempotencyKey(generateUUID());
-              }}
-              className="btn-primary"
-            >
-              <Send size={16} />
-              <span>Transfer Money</span>
-            </button>
-
-            <button
-              onClick={() => setShowDepositModal(true)}
-              className="btn-secondary"
-            >
-              <PlusCircle size={16} />
-              <span>Deposit Funds</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Risk Engine Explainer Card */}
-        <div className="risk-explainer-card">
-          <div>
-            <div className="risk-card-title">
-              <Activity size={16} color="#6366f1" />
-              <span>Rule-Based Fraud Engine</span>
-            </div>
-
-            <div className="risk-pipeline">
-              <div className="pipeline-step">
-                <div className="pipeline-step-label">Input</div>
-                <div className="pipeline-step-val">Transfer</div>
-              </div>
-              <span className="pipeline-arrow">→</span>
-              <div className="pipeline-step">
-                <div className="pipeline-step-label">Engine</div>
-                <div className="pipeline-step-val">Risk Rules</div>
-              </div>
-              <span className="pipeline-arrow">→</span>
-              <div className="pipeline-step">
-                <div className="pipeline-step-label">Output</div>
-                <div className="pipeline-step-val">Risk Score</div>
-              </div>
-            </div>
-
-            <div className="risk-tiers">
-              <div className="tier-item low">
-                <div className="tier-score">LOW (&lt;30)</div>
-                <div className="tier-action">Process</div>
-              </div>
-              <div className="tier-item medium">
-                <div className="tier-score">MEDIUM (30-59)</div>
-                <div className="tier-action">Flag</div>
-              </div>
-              <div className="tier-item high">
-                <div className="tier-score">HIGH (≥60)</div>
-                <div className="tier-action">Block</div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, fontWeight: 600 }}>
-              QUICK TEST SCENARIOS:
-            </div>
-            <div className="quick-tests">
-              <span className="test-chip" onClick={() => prefillTest('safe')}>₹5,000 (Safe)</span>
-              <span className="test-chip" onClick={() => prefillTest('flagged')}>₹85,000 (Flagged)</span>
-              <span className="test-chip" onClick={() => prefillTest('blocked')}>₹250,000 (Blocked)</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Card: Tabs (Ledger & Audit) */}
-      <div className="content-card">
-        <div className="tabs-header">
-          <div className="tab-buttons">
-            <button
-              className={`tab-btn ${activeTab === 'transactions' ? 'active' : ''}`}
-              onClick={() => setActiveTab('transactions')}
-            >
-              <History size={16} />
-              <span>Recent Transactions ({transactions.length})</span>
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'audit' ? 'active' : ''}`}
-              onClick={() => setActiveTab('audit')}
-            >
-              <ShieldCheck size={16} />
-              <span>Audit Log Trail ({auditLogs.length})</span>
-            </button>
-          </div>
+      {/* Main Layout: Sidebar + Content */}
+      <div className="sb-layout">
+        {/* Left Sidebar */}
+        <aside className="sb-sidebar">
+          <button
+            className={`sb-nav-item ${activeNav === 'dashboard' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveNav('dashboard');
+              setActiveTab('transactions');
+            }}
+          >
+            <LayoutDashboard size={18} />
+            <span>Dashboard</span>
+          </button>
 
           <button
-            onClick={() => { fetchAccount(); }}
-            className="btn-secondary"
-            style={{ padding: '6px 12px', fontSize: 12 }}
-            title="Refresh Data"
+            className={`sb-nav-item ${activeNav === 'transfer' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveNav('transfer');
+              setShowTransferModal(true);
+              setTransferError('');
+              setTransferSuccess('');
+              setRecipientInput('SB10002');
+              setIdempotencyKey(generateUUID());
+            }}
           >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            <span>Sync</span>
+            <ArrowRightLeft size={18} />
+            <span>Transfer</span>
           </button>
-        </div>
 
-        {/* Tab 1: Transactions Ledger */}
-        {activeTab === 'transactions' && (
-          <div className="table-responsive">
-            {transactions.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No transactions yet. Click <strong>Transfer Money</strong> or <strong>Deposit Funds</strong> to get started.
+          <button
+            className={`sb-nav-item ${activeNav === 'deposit' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveNav('deposit');
+              setShowDepositModal(true);
+            }}
+          >
+            <PlusCircle size={18} />
+            <span>Deposit</span>
+          </button>
+
+          <button
+            className={`sb-nav-item ${activeNav === 'transactions' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveNav('transactions');
+              setActiveTab('transactions');
+            }}
+          >
+            <History size={18} />
+            <span>Transactions</span>
+          </button>
+
+          <button
+            className={`sb-nav-item ${activeNav === 'audit' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveNav('audit');
+              setActiveTab('audit');
+            }}
+          >
+            <FileText size={18} />
+            <span>Audit Log</span>
+          </button>
+
+          <button
+            className={`sb-nav-item ${activeNav === 'risk' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveNav('risk');
+              prefillTest('safe');
+            }}
+          >
+            <Activity size={18} />
+            <span>Risk Engine</span>
+          </button>
+
+          <a
+            href="http://127.0.0.1:8000/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="sb-nav-item"
+            title="Open FastAPI Swagger Interactive Docs"
+          >
+            <FileCode size={18} />
+            <span>API Docs</span>
+          </a>
+        </aside>
+
+        {/* Main Content */}
+        <main className="sb-main">
+          {/* Greeting */}
+          <div className="sb-greeting">
+            <h2 className="sb-greeting-title">Welcome back, {userAccount.account_number} 👋</h2>
+            <div className="sb-greeting-sub">Here's your account overview</div>
+          </div>
+
+          {/* Top Cards Grid */}
+          <div className="sb-top-grid">
+            {/* Card 1: TOTAL BALANCE */}
+            <div className="sb-balance-card">
+              {/* 3D Bank Silhouette Watermark */}
+              <svg
+                className="sb-bank-watermark"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 21h18" />
+                <path d="M3 10h18" />
+                <path d="M5 6l7-3 7 3" />
+                <path d="M4 10v11" />
+                <path d="M20 10v11" />
+                <path d="M8 14v4" />
+                <path d="M12 14v4" />
+                <path d="M16 14v4" />
+              </svg>
+
+              <div>
+                <div className="sb-balance-top">
+                  <div className="sb-balance-label-row">
+                    <span>TOTAL BALANCE</span>
+                    <button
+                      className="sb-eye-toggle"
+                      onClick={() => setHideBalance(!hideBalance)}
+                      title={hideBalance ? 'Show balance' : 'Hide balance'}
+                    >
+                      {hideBalance ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+
+                  <div className="sb-status-pill">
+                    <span className="sb-green-dot"></span>
+                    <span>{userAccount.status}</span>
+                  </div>
+                </div>
+
+                <div className="sb-balance-value">
+                  {hideBalance ? '₹ ••••••' : formatINR(userAccount.balance)}
+                </div>
+
+                <div className="sb-balance-subtext">Available in your SecureBank account</div>
               </div>
-            ) : (
-              <table className="custom-table">
-                <thead>
-                  <tr>
-                    <th>Tx ID</th>
-                    <th>Type</th>
-                    <th>Sender</th>
-                    <th>Receiver</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Risk Score</th>
-                    <th>Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.map((tx) => {
-                    const isCredit = tx.receiver_account === userAccount.account_number && tx.type === 'DEPOSIT';
-                    const isIncomingTransfer = tx.receiver_account === userAccount.account_number && tx.type === 'TRANSFER';
-                    const isPositive = isCredit || isIncomingTransfer;
 
-                    return (
-                      <tr key={tx.id}>
-                        <td className="font-mono" style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                          #{tx.id}
-                        </td>
+              <div className="sb-balance-buttons">
+                <button
+                  className="sb-btn-transfer"
+                  onClick={() => {
+                    setShowTransferModal(true);
+                    setTransferError('');
+                    setTransferSuccess('');
+                    setRecipientInput('SB10002');
+                    setIdempotencyKey(generateUUID());
+                  }}
+                >
+                  <Send size={15} />
+                  <span>Transfer Money</span>
+                  <ChevronRight size={15} />
+                </button>
+
+                <button className="sb-btn-deposit" onClick={() => setShowDepositModal(true)}>
+                  <PlusCircle size={15} />
+                  <span>Deposit Funds</span>
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+
+            {/* Card 2: Rule-Based Fraud Engine */}
+            <div className="sb-fraud-card">
+              <div>
+                <div className="sb-fraud-header">
+                  <div className="sb-fraud-icon">
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div>
+                    <div className="sb-fraud-title">Rule-Based Fraud Engine</div>
+                    <div className="sb-fraud-subtitle">Every transaction is evaluated using risk rules</div>
+                  </div>
+                </div>
+
+                {/* Pipeline Flow Boxes */}
+                <div className="sb-pipeline-flow">
+                  <div className="sb-pipe-box">
+                    <FileText size={18} className="sb-pipe-icon" />
+                    <span className="sb-pipe-tag">INPUT</span>
+                    <span className="sb-pipe-name">Transfer</span>
+                  </div>
+                  <span className="sb-pipe-arrow">→</span>
+                  <div className="sb-pipe-box">
+                    <Settings size={18} className="sb-pipe-icon" />
+                    <span className="sb-pipe-tag">ENGINE</span>
+                    <span className="sb-pipe-name">Risk Rules</span>
+                  </div>
+                  <span className="sb-pipe-arrow">→</span>
+                  <div className="sb-pipe-box">
+                    <BarChart3 size={18} className="sb-pipe-icon" />
+                    <span className="sb-pipe-tag">OUTPUT</span>
+                    <span className="sb-pipe-name">Risk Score</span>
+                  </div>
+                </div>
+
+                {/* Risk Tiers */}
+                <div className="sb-tiers-grid">
+                  <div className="sb-tier-box low">
+                    <CheckCircle2 size={18} />
+                    <div>
+                      <div className="sb-tier-title">LOW (&lt; 30)</div>
+                      <div className="sb-tier-action">Process</div>
+                    </div>
+                  </div>
+                  <div className="sb-tier-box medium">
+                    <AlertTriangle size={18} />
+                    <div>
+                      <div className="sb-tier-title">MEDIUM (30 – 59)</div>
+                      <div className="sb-tier-action">Flag</div>
+                    </div>
+                  </div>
+                  <div className="sb-tier-box high">
+                    <Ban size={18} />
+                    <div>
+                      <div className="sb-tier-title">HIGH (≥ 60)</div>
+                      <div className="sb-tier-action">Block</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Test Scenarios */}
+              <div>
+                <div className="sb-scenarios-label">Quick Test Scenarios</div>
+                <div className="sb-scenarios-row">
+                  <button className="sb-scenario-btn" onClick={() => prefillTest('safe')}>
+                    <ShieldCheck size={16} color="#34d399" />
+                    <div style={{ textAlign: 'left' }}>
+                      <div className="sb-scenario-amt">₹5,000</div>
+                      <div className="sb-scenario-desc">(Safe)</div>
+                    </div>
+                  </button>
+
+                  <button className="sb-scenario-btn" onClick={() => prefillTest('flagged')}>
+                    <AlertTriangle size={16} color="#fbbf24" />
+                    <div style={{ textAlign: 'left' }}>
+                      <div className="sb-scenario-amt">₹85,000</div>
+                      <div className="sb-scenario-desc">(Flagged)</div>
+                    </div>
+                  </button>
+
+                  <button className="sb-scenario-btn" onClick={() => prefillTest('blocked')}>
+                    <Ban size={16} color="#f87171" />
+                    <div style={{ textAlign: 'left' }}>
+                      <div className="sb-scenario-amt">₹250,000</div>
+                      <div className="sb-scenario-desc">(Blocked)</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Card: Transactions / Audit Table */}
+          <div className="sb-bottom-card">
+            {/* Tab Buttons */}
+            <div className="sb-tabs-row">
+              <div className="sb-tabs-left">
+                <button
+                  className={`sb-tab-btn ${activeTab === 'transactions' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('transactions')}
+                >
+                  <History size={16} />
+                  <span>Recent Transactions ({transactions.length})</span>
+                </button>
+
+                <button
+                  className={`sb-tab-btn ${activeTab === 'audit' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('audit')}
+                >
+                  <ShieldCheck size={16} />
+                  <span>Audit Log Trail ({auditLogs.length})</span>
+                </button>
+              </div>
+
+              <button className="sb-sync-btn" onClick={() => fetchAccount()}>
+                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+                <span>Sync</span>
+              </button>
+            </div>
+
+            {/* Search & Filter Row */}
+            <div className="sb-search-row">
+              <div className="sb-search-box">
+                <Search size={14} color="#64748b" />
+                <input
+                  type="text"
+                  placeholder="Search transactions..."
+                  className="sb-search-input"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <button className="sb-filter-btn" title="Filter transactions">
+                <Filter size={14} />
+              </button>
+            </div>
+
+            {/* Tab 1: Transactions Table */}
+            {activeTab === 'transactions' && (
+              <div>
+                {filteredTransactions.length === 0 ? (
+                  <div className="sb-empty-state">
+                    <div className="sb-empty-icon">
+                      <FileText size={24} />
+                    </div>
+                    <div className="sb-empty-title">No transactions yet</div>
+                    <div className="sb-empty-sub">Click Transfer Money or Deposit Funds to get started.</div>
+                    <div className="sb-empty-actions">
+                      <button
+                        className="btn-primary"
+                        onClick={() => {
+                          setShowTransferModal(true);
+                          setRecipientInput('SB10002');
+                        }}
+                      >
+                        <Send size={14} />
+                        <span>Transfer Money</span>
+                      </button>
+                      <button className="btn-secondary" onClick={() => setShowDepositModal(true)}>
+                        <PlusCircle size={14} />
+                        <span>Deposit Funds</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="sb-table">
+                      <thead>
+                        <tr>
+                          <th>Date & Time</th>
+                          <th>Type</th>
+                          <th>Amount</th>
+                          <th>Party / Account</th>
+                          <th>Risk Score</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTransactions.map((tx) => {
+                          const isCredit =
+                            tx.receiver_account === userAccount.account_number && tx.type === 'DEPOSIT';
+                          const isIncoming =
+                            tx.receiver_account === userAccount.account_number && tx.type === 'TRANSFER';
+                          const isPositive = isCredit || isIncoming;
+                          const party = isCredit
+                            ? '—'
+                            : isIncoming
+                            ? tx.sender_account
+                            : tx.receiver_account;
+
+                          return (
+                            <tr key={tx.id}>
+                              <td style={{ color: '#94a3b8' }}>
+                                {tx.created_at ? new Date(tx.created_at).toLocaleString() : 'Just now'}
+                              </td>
+                              <td style={{ fontWeight: 700, color: '#ffffff' }}>{tx.type}</td>
+                              <td
+                                style={{
+                                  fontWeight: 800,
+                                  fontFamily: 'monospace',
+                                  color: isPositive ? '#34d399' : '#f8fafc',
+                                }}
+                              >
+                                {isPositive
+                                  ? `+ ₹${tx.amount.toLocaleString('en-IN')}`
+                                  : `- ₹${tx.amount.toLocaleString('en-IN')}`}
+                              </td>
+                              <td style={{ fontFamily: 'monospace' }}>{party}</td>
+                              <td>
+                                <span
+                                  className={`sb-badge ${
+                                    tx.risk_score === 'HIGH'
+                                      ? 'blocked'
+                                      : tx.risk_score === 'MEDIUM'
+                                      ? 'flagged'
+                                      : 'success'
+                                  }`}
+                                >
+                                  {tx.risk_score || 'LOW'}
+                                </span>
+                              </td>
+                              <td>
+                                {tx.status === 'COMPLETED' && (
+                                  <span className="sb-badge success">
+                                    <CheckCircle2 size={11} /> Success
+                                  </span>
+                                )}
+                                {tx.status === 'FLAGGED' && (
+                                  <span className="sb-badge flagged" title="Flagged by Risk Engine">
+                                    <AlertTriangle size={11} /> Flagged
+                                  </span>
+                                )}
+                                {tx.status === 'BLOCKED' && (
+                                  <span className="sb-badge blocked" title={tx.failure_reason}>
+                                    <Ban size={11} /> Blocked
+                                  </span>
+                                )}
+                                {tx.status === 'FAILED' && (
+                                  <span className="sb-badge failed" title={tx.failure_reason}>
+                                    <XCircle size={11} /> Failed
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                <button
+                                  className="test-chip"
+                                  style={{ padding: '3px 8px', fontSize: '11px' }}
+                                  onClick={() => setSelectedTxDetails(tx)}
+                                >
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab 2: Audit Logs Table */}
+            {activeTab === 'audit' && (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="sb-table">
+                  <thead>
+                    <tr>
+                      <th>Log ID</th>
+                      <th>Action</th>
+                      <th>Details</th>
+                      <th>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td style={{ color: '#94a3b8', fontFamily: 'monospace' }}>#{log.id}</td>
                         <td>
-                          <span style={{ fontWeight: 600 }}>{tx.type}</span>
-                        </td>
-                        <td className="font-mono">{tx.sender_account || '—'}</td>
-                        <td className="font-mono">{tx.receiver_account}</td>
-                        <td>
-                          <span className={isPositive ? 'amount-positive' : 'amount-negative'}>
-                            {isPositive ? `+ ${formatINR(tx.amount)}` : `- ${formatINR(tx.amount)}`}
+                          <span
+                            className={`sb-badge ${
+                              log.action.includes('FAILED') || log.action.includes('BLOCKED')
+                                ? 'blocked'
+                                : log.action.includes('FLAGGED')
+                                ? 'flagged'
+                                : 'success'
+                            }`}
+                          >
+                            {log.action}
                           </span>
                         </td>
-                        <td>
-                          {tx.status === 'COMPLETED' && (
-                            <span className="badge badge-success">
-                              <CheckCircle2 size={12} /> Success
-                            </span>
-                          )}
-                          {tx.status === 'FLAGGED' && (
-                            <span className="badge badge-warning" title="Flagged by Rule-based Risk Engine">
-                              <AlertTriangle size={12} /> Flagged
-                            </span>
-                          )}
-                          {tx.status === 'BLOCKED' && (
-                            <span className="badge badge-danger" title={tx.failure_reason || 'Blocked by Risk Engine'}>
-                              <XCircle size={12} /> Blocked
-                            </span>
-                          )}
-                          {tx.status === 'FAILED' && (
-                            <span className="badge badge-danger" title={tx.failure_reason}>
-                              <XCircle size={12} /> Failed
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          <span className={`badge ${
-                            tx.risk_score === 'HIGH' ? 'badge-danger' :
-                            tx.risk_score === 'MEDIUM' ? 'badge-warning' :
-                            'badge-success'
-                          }`}>
-                            {tx.risk_score || 'LOW'}
-                          </span>
-                        </td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                          {tx.created_at ? new Date(tx.created_at).toLocaleString() : 'Just now'}
+                        <td style={{ color: '#ffffff' }}>{log.details || '—'}</td>
+                        <td style={{ color: '#94a3b8' }}>
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )}
-
-        {/* Tab 2: Audit Logs Trail */}
-        {activeTab === 'audit' && (
-          <div className="table-responsive">
-            {auditLogs.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No audit logs recorded for this account.
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ) : (
-              <table className="custom-table">
-                <thead>
-                  <tr>
-                    <th>Log ID</th>
-                    <th>Action</th>
-                    <th>Details</th>
-                    <th>Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLogs.map((log) => (
-                    <tr key={log.id}>
-                      <td className="font-mono" style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                        #{log.id}
-                      </td>
-                      <td>
-                        <span className={`badge ${
-                          log.action.includes('FAILED') || log.action.includes('BLOCKED') ? 'badge-danger' :
-                          log.action.includes('FLAGGED') ? 'badge-warning' :
-                          'badge-neutral'
-                        }`}>
-                          {log.action}
-                        </span>
-                      </td>
-                      <td style={{ color: 'var(--text-primary)' }}>{log.details || '—'}</td>
-                      <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                        {log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             )}
           </div>
-        )}
+        </main>
       </div>
 
       {/* Transfer Money Modal */}
@@ -859,33 +1063,39 @@ export default function App() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Transfer Money</h3>
-              <button className="btn-close" onClick={() => setShowTransferModal(false)}>×</button>
+              <button className="btn-close" onClick={() => setShowTransferModal(false)}>
+                ×
+              </button>
             </div>
 
             {transferError && (
-              <div style={{
-                background: 'var(--danger-bg)',
-                border: '1px solid var(--danger-border)',
-                color: '#f87171',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '13px',
-                marginBottom: '16px'
-              }}>
+              <div
+                style={{
+                  background: 'var(--red-bg)',
+                  border: '1px solid var(--red-border)',
+                  color: '#f87171',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  marginBottom: '16px',
+                }}
+              >
                 {transferError}
               </div>
             )}
 
             {transferSuccess && (
-              <div style={{
-                background: 'var(--success-bg)',
-                border: '1px solid var(--success-border)',
-                color: '#34d399',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '13px',
-                marginBottom: '16px'
-              }}>
+              <div
+                style={{
+                  background: 'var(--green-bg)',
+                  border: '1px solid var(--green-border)',
+                  color: '#34d399',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  marginBottom: '16px',
+                }}
+              >
                 {transferSuccess}
               </div>
             )}
@@ -904,11 +1114,17 @@ export default function App() {
                 {recipientInfo && (
                   <div className={`recipient-preview ${recipientInfo.valid ? '' : 'invalid'}`}>
                     <span>
-                      {recipientInfo.valid ? `Verified: ${recipientInfo.name} (${recipientInfo.account_number})` :
-                       recipientInfo.is_self ? 'Cannot transfer to your own account' :
-                       recipientInfo.detail || 'Invalid or inactive account'}
+                      {recipientInfo.valid
+                        ? `Verified: ${recipientInfo.name} (${recipientInfo.account_number})`
+                        : recipientInfo.is_self
+                        ? 'Cannot transfer to your own account'
+                        : recipientInfo.detail || 'Invalid or inactive account'}
                     </span>
-                    {recipientInfo.valid ? <CheckCircle2 size={16} color="#10b981" /> : <XCircle size={16} color="#ef4444" />}
+                    {recipientInfo.valid ? (
+                      <CheckCircle2 size={16} color="#10b981" />
+                    ) : (
+                      <XCircle size={16} color="#ef4444" />
+                    )}
                   </div>
                 )}
               </div>
@@ -925,47 +1141,59 @@ export default function App() {
                   onChange={(e) => setTransferAmount(e.target.value)}
                 />
                 <div className="preset-pills">
-                  <span className="preset-pill" onClick={() => setTransferAmount('5000')}>₹5,000 (Safe)</span>
-                  <span className="preset-pill" onClick={() => setTransferAmount('85000')}>₹85,000 (Flagged)</span>
-                  <span className="preset-pill" onClick={() => setTransferAmount('250000')}>₹250,000 (Blocked)</span>
+                  <span className="preset-pill" onClick={() => setTransferAmount('5000')}>
+                    ₹5,000 (Safe)
+                  </span>
+                  <span className="preset-pill" onClick={() => setTransferAmount('85000')}>
+                    ₹85,000 (Flagged)
+                  </span>
+                  <span className="preset-pill" onClick={() => setTransferAmount('250000')}>
+                    ₹250,000 (Blocked)
+                  </span>
                 </div>
               </div>
 
               {/* Real-time Risk Prediction Banner */}
               {transferAmount && (
-                <div style={{
-                  padding: '9px 12px',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginBottom: '14px',
-                  background: riskPreview.bg,
-                  border: `1px solid ${riskPreview.border}`,
-                  color: riskPreview.color,
-                  fontWeight: 500
-                }}>
+                <div
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '14px',
+                    background: riskPreview.bg,
+                    border: `1px solid ${riskPreview.border}`,
+                    color: riskPreview.color,
+                    fontWeight: 600,
+                  }}
+                >
                   <Activity size={15} />
                   <span>{riskPreview.text}</span>
                 </div>
               )}
 
-              {/* Idempotency Demonstration Box */}
+              {/* Idempotency Protection Box */}
               <div className="idempotency-box">
                 <div className="idempotency-header">
                   <span>🛡️ Idempotency Protection Active</span>
                   <button
                     type="button"
                     onClick={() => setIdempotencyKey(generateUUID())}
-                    style={{ background: 'none', border: 'none', color: '#818cf8', cursor: 'pointer', fontSize: 11 }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#818cf8',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                    }}
                   >
                     Regenerate Key
                   </button>
                 </div>
-                <div className="idempotency-key-text">
-                  Key: {idempotencyKey}
-                </div>
+                <div className="idempotency-key-text">Key: {idempotencyKey}</div>
               </div>
 
               <div style={{ display: 'flex', gap: 10 }}>
@@ -982,7 +1210,7 @@ export default function App() {
                   type="button"
                   className="btn-secondary"
                   style={{ fontSize: 12, padding: '0 12px' }}
-                  title="Simulate accidental double-click to test duplicate transfer protection"
+                  title="Test sending twice with the same key to verify idempotency deduplication"
                   onClick={() => handleTransfer(null, true)}
                   disabled={transferSubmitting}
                 >
@@ -1000,7 +1228,9 @@ export default function App() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Deposit Funds</h3>
-              <button className="btn-close" onClick={() => setShowDepositModal(false)}>×</button>
+              <button className="btn-close" onClick={() => setShowDepositModal(false)}>
+                ×
+              </button>
             </div>
 
             <form onSubmit={handleDeposit}>
@@ -1017,9 +1247,15 @@ export default function App() {
                   onChange={(e) => setDepositAmount(e.target.value)}
                 />
                 <div className="preset-pills">
-                  <span className="preset-pill" onClick={() => setDepositAmount('10000')}>₹10,000</span>
-                  <span className="preset-pill" onClick={() => setDepositAmount('50000')}>₹50,000</span>
-                  <span className="preset-pill" onClick={() => setDepositAmount('100000')}>₹100,000</span>
+                  <span className="preset-pill" onClick={() => setDepositAmount('10000')}>
+                    ₹10,000
+                  </span>
+                  <span className="preset-pill" onClick={() => setDepositAmount('50000')}>
+                    ₹50,000
+                  </span>
+                  <span className="preset-pill" onClick={() => setDepositAmount('100000')}>
+                    ₹100,000
+                  </span>
                 </div>
               </div>
 
@@ -1032,6 +1268,62 @@ export default function App() {
                 {depositSubmitting ? 'Depositing...' : 'Deposit to Account'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Transaction Details Modal */}
+      {selectedTxDetails && (
+        <div className="modal-overlay" onClick={() => setSelectedTxDetails(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Transaction #{selectedTxDetails.id} Details</h3>
+              <button className="btn-close" onClick={() => setSelectedTxDetails(null)}>
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 }}>
+              <div>
+                <strong>Type:</strong> {selectedTxDetails.type}
+              </div>
+              <div>
+                <strong>Amount:</strong> {formatINR(selectedTxDetails.amount)}
+              </div>
+              <div>
+                <strong>Sender:</strong> {selectedTxDetails.sender_account || '—'}
+              </div>
+              <div>
+                <strong>Receiver:</strong> {selectedTxDetails.receiver_account}
+              </div>
+              <div>
+                <strong>Status:</strong> {selectedTxDetails.status}
+              </div>
+              <div>
+                <strong>Risk Score:</strong> {selectedTxDetails.risk_score}
+              </div>
+              {selectedTxDetails.failure_reason && (
+                <div>
+                  <strong>Reason:</strong> {selectedTxDetails.failure_reason}
+                </div>
+              )}
+              {selectedTxDetails.idempotency_key && (
+                <div style={{ wordBreak: 'break-all' }}>
+                  <strong>Idempotency Key:</strong> {selectedTxDetails.idempotency_key}
+                </div>
+              )}
+              <div>
+                <strong>Date & Time:</strong> {new Date(selectedTxDetails.created_at).toLocaleString()}
+              </div>
+            </div>
+
+            <button
+              className="btn-secondary"
+              style={{ width: '100%', marginTop: 20, justifyContent: 'center' }}
+              onClick={() => setSelectedTxDetails(null)}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
