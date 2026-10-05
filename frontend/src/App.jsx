@@ -15,6 +15,7 @@ import {
   User,
   Activity,
   History,
+  Sparkles,
   Info
 } from 'lucide-react';
 import './App.css';
@@ -52,7 +53,7 @@ export default function App() {
   const [showDepositModal, setShowDepositModal] = useState(false);
 
   // Transfer Form State
-  const [recipientInput, setRecipientInput] = useState('');
+  const [recipientInput, setRecipientInput] = useState('SB10002');
   const [transferAmount, setTransferAmount] = useState('');
   const [idempotencyKey, setIdempotencyKey] = useState(generateUUID());
   const [recipientInfo, setRecipientInfo] = useState(null);
@@ -87,7 +88,7 @@ export default function App() {
 
   useEffect(() => {
     checkHealth();
-    const interval = setInterval(checkHealth, 20000);
+    const interval = setInterval(checkHealth, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -170,7 +171,7 @@ export default function App() {
       } catch {
         setRecipientInfo(null);
       }
-    }, 400);
+    }, 350);
 
     return () => clearTimeout(timer);
   }, [recipientInput, token]);
@@ -225,7 +226,6 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
-        // Automatically login
         await handleLogin(null, authEmail, authPassword);
       } else {
         setAuthError(data.detail || 'Registration failed.');
@@ -243,6 +243,24 @@ export default function App() {
     setUserAccount(null);
     setTransactions([]);
     setAuditLogs([]);
+  };
+
+  // Seed / Reset to Interview Spec
+  const handleDemoSeed = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${API_BASE}/accounts/demo-seed`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        fetchAccount();
+      }
+    } catch (err) {
+      console.error('Failed to seed demo data', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Transfer Money Handler
@@ -278,7 +296,7 @@ export default function App() {
       if (res.ok) {
         if (duplicateSimulation) {
           setTransferSuccess(
-            `✅ Idempotency Verified! Duplicate request recognized (Tx #${data.id}). No additional funds deducted.`
+            `🛡️ Idempotency Verified! Duplicate request recognized (Tx #${data.id}). Safe replay: no double deduction occurred.`
           );
         } else if (data.status === 'FLAGGED') {
           setTransferSuccess(
@@ -334,20 +352,50 @@ export default function App() {
     setShowTransferModal(true);
     setTransferError('');
     setTransferSuccess('');
+    setRecipientInput('SB10002');
     if (type === 'safe') {
-      setRecipientInput('SB10002');
       setTransferAmount('5000');
       setIdempotencyKey(generateUUID());
     } else if (type === 'flagged') {
-      setRecipientInput('SB10002');
       setTransferAmount('85000');
       setIdempotencyKey(generateUUID());
     } else if (type === 'blocked') {
-      setRecipientInput('SB10002');
       setTransferAmount('250000');
       setIdempotencyKey(generateUUID());
     }
   };
+
+  // Calculate live risk preview for modal
+  const getRiskPreview = () => {
+    const amt = parseInt(transferAmount, 10) || 0;
+    if (amt >= 250000) {
+      return {
+        level: 'HIGH',
+        text: 'Risk Prediction: HIGH (Will be BLOCKED by Risk Engine, HTTP 403, 0 funds debited)',
+        bg: 'var(--danger-bg)',
+        border: 'var(--danger-border)',
+        color: '#f87171',
+      };
+    }
+    if (amt >= 75000) {
+      return {
+        level: 'MEDIUM',
+        text: 'Risk Prediction: MEDIUM (High amount: Will execute with status FLAGGED)',
+        bg: 'var(--warning-bg)',
+        border: 'var(--warning-border)',
+        color: '#fbbf24',
+      };
+    }
+    return {
+      level: 'LOW',
+      text: 'Risk Prediction: LOW (Safe transfer: Instant execution & COMPLETED)',
+      bg: 'var(--success-bg)',
+      border: 'var(--success-border)',
+      color: '#34d399',
+    };
+  };
+
+  const riskPreview = getRiskPreview();
 
   // ================= RENDER =================
 
@@ -512,6 +560,25 @@ export default function App() {
         </div>
 
         <div className="header-actions">
+          <button
+            onClick={handleDemoSeed}
+            className="test-chip"
+            style={{
+              background: 'rgba(99, 102, 241, 0.25)',
+              color: '#c7d2fe',
+              border: '1px solid rgba(99, 102, 241, 0.5)',
+              padding: '6px 14px',
+              fontSize: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            title="Reset Alice to the exact ₹42,500 interview specification"
+          >
+            <Sparkles size={14} color="#818cf8" />
+            <span>Reset Demo (₹42,500)</span>
+          </button>
+
           <div className="health-badge" title="FastAPI REST API /health endpoint">
             <span className="health-dot"></span>
             <span>API Online</span>
@@ -552,6 +619,7 @@ export default function App() {
                 setShowTransferModal(true);
                 setTransferError('');
                 setTransferSuccess('');
+                setRecipientInput('SB10002');
                 setIdempotencyKey(generateUUID());
               }}
               className="btn-primary"
@@ -863,6 +931,26 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Real-time Risk Prediction Banner */}
+              {transferAmount && (
+                <div style={{
+                  padding: '9px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '14px',
+                  background: riskPreview.bg,
+                  border: `1px solid ${riskPreview.border}`,
+                  color: riskPreview.color,
+                  fontWeight: 500
+                }}>
+                  <Activity size={15} />
+                  <span>{riskPreview.text}</span>
+                </div>
+              )}
+
               {/* Idempotency Demonstration Box */}
               <div className="idempotency-box">
                 <div className="idempotency-header">
@@ -872,7 +960,7 @@ export default function App() {
                     onClick={() => setIdempotencyKey(generateUUID())}
                     style={{ background: 'none', border: 'none', color: '#818cf8', cursor: 'pointer', fontSize: 11 }}
                   >
-                    Generate New Key
+                    Regenerate Key
                   </button>
                 </div>
                 <div className="idempotency-key-text">

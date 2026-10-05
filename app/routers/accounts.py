@@ -110,3 +110,65 @@ def verify_recipient(
         "valid": (acc.status == "ACTIVE" and not is_self),
     }
 
+
+@router.post("/demo-seed")
+def seed_demo_data(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Seed the exact interview demo state (₹42,500 balance, Bob recipient, and 3 transactions)."""
+    alice_acc = current_user.account
+    bob_user = db.query(User).filter(User.email == "bob@example.com").first()
+    if not bob_user:
+        from app.auth import hash_password
+        bob_user = User(name="Bob Jones", email="bob@example.com", password_hash=hash_password("secret123"))
+        db.add(bob_user)
+        db.flush()
+        bob_acc = Account(user_id=bob_user.id, account_number="SB10002", balance=90000, status="ACTIVE")
+        db.add(bob_acc)
+        db.flush()
+    else:
+        bob_acc = bob_user.account
+
+    # Set Alice balance to exact spec: 42,500
+    alice_acc.balance = 42500
+    if bob_acc:
+        bob_acc.balance = 90000
+
+    # Remove existing demo transactions for Alice to give exact match
+    db.query(Transaction).filter(
+        (Transaction.sender_account_id == alice_acc.id) | (Transaction.receiver_account_id == alice_acc.id)
+    ).delete()
+
+    t1 = Transaction(
+        type="DEPOSIT",
+        sender_account_id=None,
+        receiver_account_id=alice_acc.id,
+        amount=10000,
+        status="COMPLETED",
+        risk_score="LOW",
+    )
+    t2 = Transaction(
+        type="TRANSFER",
+        sender_account_id=alice_acc.id,
+        receiver_account_id=bob_acc.id,
+        amount=5000,
+        status="COMPLETED",
+        risk_score="LOW",
+    )
+    t3 = Transaction(
+        type="TRANSFER",
+        sender_account_id=alice_acc.id,
+        receiver_account_id=bob_acc.id,
+        amount=85000,
+        status="FLAGGED",
+        risk_score="MEDIUM",
+    )
+
+    db.add_all([t1, t2, t3])
+    log_action(db, current_user.id, "DEMO_SEEDED", "Reset demo data to interview spec: ₹42,500")
+    db.commit()
+
+    return {"message": "Demo data seeded successfully", "balance": 42500, "account_number": alice_acc.account_number}
+
+

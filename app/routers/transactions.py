@@ -120,17 +120,17 @@ def transfer(
         # Step 4: Audit - transfer initiated
         log_action(db, user_id, "TRANSFER_INITIATED", f"Initiated transfer of {data.amount} to {receiver_number}")
 
-        # Step 5: Check balance before risk engine
-        if sender.balance < data.amount:
-            fail(400, "Insufficient balance")
-
-        # Step 6: Fraud / Risk Detection Engine
+        # Step 5: Fraud / Risk Detection Engine (evaluated before processing money)
         risk_score_val, risk_level, reasons = evaluate_transfer_risk(db, sender, receiver, data.amount)
 
         if risk_level == "HIGH":
             reason_str = f"Transaction blocked by Risk Engine: High risk score ({', '.join(reasons)})"
             log_action(db, user_id, "TRANSACTION_FLAGGED", f"High risk transfer flagged ({risk_score_val} pts): {', '.join(reasons)}")
             fail(403, reason_str, status_val="BLOCKED", risk_val="HIGH")
+
+        # Step 6: Check balance
+        if sender.balance < data.amount:
+            fail(400, "Insufficient balance")
 
         tx_status = "COMPLETED"
         if risk_level == "MEDIUM":
