@@ -54,6 +54,7 @@ class TransferRequest(BaseModel):
     # Note: there is NO sender field. The sender always comes from the JWT.
     receiver_account: str
     amount: int = Field(gt=0)
+    idempotency_key: Optional[str] = None
 
 
 class TransactionResponse(BaseModel):
@@ -65,5 +66,18 @@ class TransactionResponse(BaseModel):
     receiver_account: str
     amount: int
     status: str
+    risk_score: str = "LOW"
+    idempotency_key: Optional[str] = None
     failure_reason: Optional[str]
     created_at: datetime
+
+
+# ---------- Audit ----------
+
+class AuditLogResponse(BaseModel):
+    id: int
+    user_id: Optional[int]
+    action: str
+    details: Optional[str]
+    timestamp: datetime
+

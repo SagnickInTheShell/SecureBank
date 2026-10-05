@@ -1,7 +1,10 @@
 """Entry point: creates the FastAPI app and plugs in all the routers."""
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
 from app.routers import accounts, auth, transactions
@@ -14,7 +17,20 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="SecureBank", description="A mini banking REST API", lifespan=lifespan)
+app = FastAPI(
+    title="SecureBank",
+    description="Intelligent Banking Transaction Platform REST API",
+    lifespan=lifespan,
+)
+
+# Enable CORS for React frontend development server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(auth.router)
 app.include_router(accounts.router)
@@ -25,3 +41,9 @@ app.include_router(transactions.router)
 def health():
     """Simple check that the API is running. No login needed."""
     return {"status": "healthy", "service": "SecureBank API"}
+
+
+# Serve compiled React frontend if built
+frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+if os.path.exists(frontend_dist):
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

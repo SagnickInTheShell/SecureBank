@@ -56,8 +56,10 @@ class Transaction(Base):
     sender_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)  # None for deposits
     receiver_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
     amount = Column(Integer, nullable=False)  # whole rupees
-    status = Column(String, nullable=False)  # "COMPLETED" or "FAILED"
-    failure_reason = Column(String, nullable=True)  # only filled in for FAILED transactions
+    status = Column(String, nullable=False)  # "COMPLETED", "FLAGGED", "FAILED", "BLOCKED"
+    risk_score = Column(String, default="LOW", nullable=False)  # "LOW", "MEDIUM", "HIGH"
+    idempotency_key = Column(String, unique=True, index=True, nullable=True)
+    failure_reason = Column(String, nullable=True)  # only filled in for FAILED or BLOCKED transactions
     created_at = Column(DateTime, default=utc_now)
 
 

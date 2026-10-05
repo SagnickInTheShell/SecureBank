@@ -286,3 +286,90 @@ def test_health_works_without_token(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "healthy", "service": "SecureBank API"}
+
+
+# ---------- risk engine & idempotency ----------
+
+def test_risk_engine_low_and_medium_and_high(client):
+    headers_a, headers_b, acc_a, acc_b = setup_a_and_b(client)
+    # Alice deposits 500,000 rupees
+    client.post("/accounts/me/deposit", json={"amount": 480000}, headers=headers_a)
+    assert balance(client, headers_a) == 500000
+
+    # 1. LOW Risk transfer: 5,000 INR
+    res_low = transfer(client, headers_a, acc_b, 5000)
+    assert res_low.status_code == 200
+    assert res_low.json()["status"] == "COMPLETED"
+    assert res_low.json()["risk_score"] == "LOW"
+
+    # 2. MEDIUM Risk transfer: 85,000 INR (>= 75,000 threshold)
+    res_med = transfer(client, headers_a, acc_b, 85000)
+    assert res_med.status_code == 200
+    assert res_med.json()["status"] == "FLAGGED"
+    assert res_med.json()["risk_score"] == "MEDIUM"
+    assert balance(client, headers_a) == 500000 - 5000 - 85000
+
+    # 3. HIGH Risk transfer: 250,000 INR (>= 250,000 threshold triggers BLOCK)
+    res_high = transfer(client, headers_a, acc_b, 250000)
+    assert res_high.status_code == 403
+    assert "High risk" in res_high.json()["detail"]
+    # Balance should NOT be deducted
+    assert balance(client, headers_a) == 410000
+
+    # Check blocked transaction in sender's history
+    hist = client.get("/transactions/history", headers=headers_a).json()
+    assert hist[0]["status"] == "BLOCKED"
+    assert hist[0]["risk_score"] == "HIGH"
+
+
+def test_idempotency_prevents_duplicate_transfers(client):
+    headers_a, headers_b, acc_a, acc_b = setup_a_and_b(client)
+    idemp_key = "transfer-uuid-9999"
+
+    # Request 1: transfer 5000 with idempotency key
+    res1 = client.post(
+        "/transactions/transfer",
+        json={"receiver_account": acc_b, "amount": 5000, "idempotency_key": idemp_key},
+        headers=headers_a,
+    )
+    assert res1.status_code == 200
+    tx1 = res1.json()
+    assert tx1["status"] == "COMPLETED"
+    assert balance(client, headers_a) == 15000
+    assert balance(client, headers_b) == 5000
+
+    # Request 2: accidental duplicate request with exact same idempotency key
+    res2 = client.post(
+        "/transactions/transfer",
+        json={"receiver_account": acc_b, "amount": 5000, "idempotency_key": idemp_key},
+        headers=headers_a,
+    )
+    assert res2.status_code == 200
+    tx2 = res2.json()
+    # Same transaction ID returned
+    assert tx2["id"] == tx1["id"]
+    # NO second deduction!
+    assert balance(client, headers_a) == 15000
+    assert balance(client, headers_b) == 5000
+
+
+def test_audit_logs_and_verify_recipient_endpoints(client):
+    headers_a, headers_b, acc_a, acc_b = setup_a_and_b(client)
+
+    # Recipient verification
+    v_ok = client.get(f"/accounts/verify/{acc_b}", headers=headers_a).json()
+    assert v_ok["valid"] is True
+    assert v_ok["account_number"] == acc_b
+
+    v_self = client.get(f"/accounts/verify/{acc_a}", headers=headers_a).json()
+    assert v_self["valid"] is False
+    assert v_self["is_self"] is True
+
+    # Audit logs endpoint
+    transfer(client, headers_a, acc_b, 5000)
+    logs_res = client.get("/accounts/me/audit-logs", headers=headers_a)
+    assert logs_res.status_code == 200
+    log_actions = [l["action"] for l in logs_res.json()]
+    assert "TRANSFER_INITIATED" in log_actions
+    assert "TRANSFER_COMPLETED" in log_actions
+
