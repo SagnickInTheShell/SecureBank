@@ -5,12 +5,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    port: 5174,
     proxy: {
-      '/auth': 'http://127.0.0.1:8000',
-      '/accounts': 'http://127.0.0.1:8000',
-      '/transactions': 'http://127.0.0.1:8000',
-      '/health': 'http://127.0.0.1:8000',
+      '/auth': 'http://127.0.0.1:8001',
+      '/accounts': 'http://127.0.0.1:8001',
+      '/transactions': 'http://127.0.0.1:8001',
+      '/health': 'http://127.0.0.1:8001',
     },
   },
 })

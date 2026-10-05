@@ -658,7 +658,7 @@ export default function App() {
           </button>
 
           <a
-            href="http://127.0.0.1:8000/docs"
+            href="http://127.0.0.1:8001/docs"
             target="_blank"
             rel="noopener noreferrer"
             className="sb-nav-item"
